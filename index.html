@@ -122,6 +122,7 @@
   .tg-q { background: rgba(245,158,11,.2); color: var(--gold); }
   .tg-m { background: rgba(16,185,129,.15); color: var(--green); }
   .tg-d { background: rgba(124,58,237,.2); color: var(--accent2); }
+  .tg-src { background: rgba(255,255,255,.06); color: var(--text2); font-size: 10px; }
   .ck {
     width: 56px; height: 56px; border-radius: 50%;
     border: 2.5px solid var(--border); background: var(--surface2);
@@ -185,13 +186,11 @@
     -webkit-appearance: none; flex-shrink: 0;
   }
 
-  .src-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-  .src-tab {
-    flex: 1; padding: 12px; border-radius: 12px; border: 1.5px solid var(--border);
-    background: transparent; color: var(--text2); font-size: 15px; font-weight: 600;
-    cursor: pointer; -webkit-appearance: none; text-align: center;
+  .src-section { margin-bottom: 16px; }
+  .src-label {
+    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--accent2); margin-bottom: 8px;
   }
-  .src-tab.on { border-color: var(--accent2); color: var(--accent2); background: rgba(168,85,247,.1); }
   .eb-token-saved {
     display: flex; align-items: center; gap: 10px; padding: 12px 16px;
     background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.2);
@@ -243,37 +242,30 @@
 
       <div class="divider">Add new event</div>
 
-      <!-- Source tabs -->
-      <div class="src-tabs">
-        <button class="src-tab on" id="tabEB" onclick="switchSource('eventbrite')">Eventbrite</button>
-        <button class="src-tab" id="tabGS" onclick="switchSource('sheets')">Google Sheet</button>
-      </div>
-
-      <!-- Eventbrite source -->
-      <div id="srcEventbrite">
+      <!-- Eventbrite -->
+      <div class="src-section">
+        <div class="src-label">Eventbrite</div>
         <div class="sbox" id="ebTokenBox">
           Paste your Eventbrite <strong>Private Token</strong> below. Get one at
           <strong>eventbrite.com &rarr; Account Settings &rarr; Developer Links &rarr; API Keys</strong>.<br><br>
           Saved locally on this device only.
         </div>
         <input class="sinp" id="ebToken" type="password" placeholder="Eventbrite private token" autocomplete="off" spellcheck="false">
-        <input class="sinp" id="ebUrl" type="url" placeholder="Paste Eventbrite event URL or event ID" autocomplete="off" spellcheck="false">
-        <input class="sinp" id="ebName" type="text" placeholder="Event name (optional, auto-detected)">
-        <button class="sbtn" id="ebBtn" onclick="loadEventbrite()">Load from Eventbrite</button>
+        <input class="sinp" id="ebUrl" type="url" placeholder="Paste Eventbrite event URL or event ID (optional)" autocomplete="off" spellcheck="false">
       </div>
 
-      <!-- Google Sheets source -->
-      <div id="srcSheets" style="display:none">
+      <!-- Google Sheet -->
+      <div class="src-section">
+        <div class="src-label">Google Sheet</div>
         <div class="sbox">
-          Before the sound bath, open the Google Sheet and go to:<br>
-          <strong>File &rarr; Share &rarr; Publish to web &rarr; Publish</strong><br><br>
-          Then paste the sheet URL below. You can unpublish after the event.
+          <strong>File &rarr; Share &rarr; Publish to web &rarr; Publish</strong><br>
+          Then paste the sheet URL below.
         </div>
-        <input class="sinp" id="urlIn" type="url" placeholder="Paste Google Sheet URL..." autocomplete="off" spellcheck="false">
-        <input class="sinp" id="nameIn" type="text" placeholder="Event name (optional, auto-detected from data)">
-        <button class="sbtn" id="goBtn" onclick="loadSheet()">Load Check-In List</button>
+        <input class="sinp" id="urlIn" type="url" placeholder="Paste Google Sheet URL (optional)" autocomplete="off" spellcheck="false">
       </div>
 
+      <input class="sinp" id="nameIn" type="text" placeholder="Event name (optional, auto-detected)">
+      <button class="sbtn" id="goBtn" onclick="loadEvent()">Load Check-In List</button>
       <div class="serr" id="homeErr"></div>
     </div>
   </div>
@@ -330,9 +322,8 @@ let attendees = [];
 let curSheet = null;     // { id, name, sheetId?, ebEventId?, source }
 let filter = 'all';
 let timer = null;
-let curSource = 'eventbrite';
-
 function getEventKey(ev) {
+  if (ev.ebEventId && ev.sheetId) return 'ev_' + ev.ebEventId + '_' + ev.sheetId;
   if (ev.ebEventId) return 'eb_' + ev.ebEventId;
   return ev.sheetId;
 }
@@ -354,16 +345,6 @@ function init() {
   }
   renderHome();
   initEBToken();
-}
-
-// ─── SOURCE TABS ───
-function switchSource(src) {
-  curSource = src;
-  document.getElementById('tabEB').classList.toggle('on', src==='eventbrite');
-  document.getElementById('tabGS').classList.toggle('on', src==='sheets');
-  document.getElementById('srcEventbrite').style.display = src==='eventbrite' ? '' : 'none';
-  document.getElementById('srcSheets').style.display = src==='sheets' ? '' : 'none';
-  document.getElementById('homeErr').textContent = '';
 }
 
 // ─── EVENTBRITE TOKEN ───
@@ -399,7 +380,7 @@ function renderHome() {
   el.innerHTML = saved.map((s, i) => {
     const evKey = getEventKey(s);
     const ciCount = ci[evKey] ? Object.keys(ci[evKey]).length : 0;
-    const srcLabel = s.source === 'eventbrite' ? 'EB' : 'GS';
+    const srcLabel = (s.ebEventId && s.sheetId) ? 'EB+GS' : s.ebEventId ? 'EB' : 'GS';
     return `<div class="saved-item" onclick="openSaved(${i})">
       <span class="si-name">${esc(s.name)}</span>
       <span class="si-count">${ciCount ? ciCount + ' checked in' : ''} <span style="opacity:.5;font-size:11px">${srcLabel}</span></span>
@@ -422,55 +403,113 @@ function openSaved(i) {
   timer = setInterval(sync, 30000);
 }
 
-// ─── LOAD NEW SHEET ───
-async function loadSheet() {
-  const url = document.getElementById('urlIn').value;
+// ─── LOAD EVENT (unified: both sources) ───
+async function loadEvent() {
+  const sheetUrl = document.getElementById('urlIn').value.trim();
+  const ebUrlVal = document.getElementById('ebUrl').value.trim();
+  const tokenInput = document.getElementById('ebToken').value.trim();
   const customName = document.getElementById('nameIn').value.trim();
   const btn = document.getElementById('goBtn');
   const err = document.getElementById('homeErr');
 
-  const sheetId = getSheetId(url);
-  if (!sheetId) { err.textContent = 'Paste a Google Sheet URL'; return; }
+  const sheetId = sheetUrl ? getSheetId(sheetUrl) : null;
+  const ebEventId = ebUrlVal ? getEBEventId(ebUrlVal) : null;
+  const token = tokenInput || localStorage.getItem(EB_TOKEN_KEY);
+
+  if (!sheetId && !ebEventId) { err.textContent = 'Enter an Eventbrite event URL, a Google Sheet URL, or both'; return; }
+  if (ebEventId && !token) { err.textContent = 'Enter your Eventbrite private token'; return; }
+  if (sheetUrl && !sheetId) { err.textContent = 'Invalid Google Sheet URL'; return; }
+  if (ebUrlVal && !ebEventId) { err.textContent = 'Invalid Eventbrite URL or event ID'; return; }
 
   btn.disabled = true; btn.textContent = 'Loading...'; err.textContent = '';
 
   try {
-    const data = await fetchGviz(sheetId);
-    if (!data.length) throw new Error('No order data found. Is the sheet published to web?');
-
-    // Auto-detect event name from first row's line item
+    let ebData = [], gsData = [];
     let name = customName;
-    if (!name) {
-      name = data[0]._eventName || 'Sound Bath';
-      // Shorten: "March 18th - enterSTELLAR Sound Bath" → "March 18th"
-      name = name.replace(/ ?-? ?enterSTELLAR Sound Bath/i, '').replace(/enterSTELLAR Sound Bath -? ?/i, '').trim() || name;
+
+    // Fetch Eventbrite
+    if (ebEventId && token) {
+      ebData = await fetchEventbrite(ebEventId, token);
+      if (tokenInput) localStorage.setItem(EB_TOKEN_KEY, tokenInput);
+      // Auto-detect name from Eventbrite
+      if (!name) {
+        try {
+          const evRes = await fetch(`https://www.eventbriteapi.com/v3/events/${ebEventId}/?token=${token}`);
+          if (evRes.ok) { const ev = await evRes.json(); name = ev.name?.text || ''; }
+        } catch(e) {}
+      }
     }
 
-    // Save to list (avoid duplicates)
-    const existing = saved.findIndex(s => s.sheetId === sheetId);
+    // Fetch Google Sheet
+    if (sheetId) {
+      gsData = await fetchGviz(sheetId);
+      if (!name && gsData.length) {
+        name = gsData[0]._eventName || '';
+        name = name.replace(/ ?-? ?enterSTELLAR Sound Bath/i, '').replace(/enterSTELLAR Sound Bath -? ?/i, '').trim();
+      }
+    }
+
+    // Merge: deduplicate by email (lowercase), prefer Eventbrite record
+    const merged = mergeAttendees(ebData, gsData);
+    if (!merged.length) throw new Error('No attendees found from either source.');
+
+    if (!name) name = 'Sound Bath';
+
+    // Build event key from both sources
+    const evId = 'ev_' + (ebEventId || '') + '_' + (sheetId || '');
+    const existing = saved.findIndex(s =>
+      (ebEventId && s.ebEventId === ebEventId) || (sheetId && s.sheetId === sheetId)
+    );
+    const evObj = { id: evId, name, sheetId: sheetId || null, ebEventId: ebEventId || null, source: 'combined' };
     if (existing >= 0) {
-      saved[existing].name = name;
+      saved[existing] = { ...saved[existing], ...evObj };
     } else {
-      saved.unshift({ id: 'ev_' + Date.now(), name, sheetId, source: 'sheets' });
+      saved.unshift(evObj);
     }
     localStorage.setItem(SAVED_KEY, JSON.stringify(saved));
 
-    curSheet = saved.find(s => s.sheetId === sheetId);
-    attendees = applyCI(data, sheetId);
+    curSheet = saved.find(s => s.id === evId) || saved[0];
+    const evKey = getEventKey(curSheet);
+    attendees = applyCI(merged, evKey);
+
     document.getElementById('urlIn').value = '';
+    document.getElementById('ebUrl').value = '';
     document.getElementById('nameIn').value = '';
 
     showApp();
     renderStats(); render();
-    toast(name + ': ' + data.length + ' orders loaded');
+    const sources = [ebData.length ? ebData.length + ' from Eventbrite' : '', gsData.length ? gsData.length + ' from Sheet' : ''].filter(Boolean).join(', ');
+    toast(name + ': ' + merged.length + ' attendees (' + sources + ')');
     timer = setInterval(sync, 30000);
+    initEBToken();
   } catch (e) {
     err.textContent = 'Error: ' + e.message;
+    if (e.message.includes('401') || e.message.includes('INVALID_AUTH')) {
+      err.textContent = 'Invalid Eventbrite token. Check your private token.';
+    }
     if (e.message.includes('access') || e.message.includes('ACCESS')) {
-      err.textContent = 'Sheet not accessible. Publish it first: File → Share → Publish to web → Publish';
+      err.textContent = 'Sheet not accessible. Publish it first: File > Share > Publish to web > Publish';
     }
   }
   btn.disabled = false; btn.textContent = 'Load Check-In List';
+}
+
+function mergeAttendees(ebData, gsData) {
+  // Index Eventbrite by lowercase email
+  const byEmail = {};
+  const result = [];
+  for (const a of ebData) {
+    const key = (a.email || '').toLowerCase();
+    if (key) byEmail[key] = true;
+    result.push({ ...a, _source: 'eb' });
+  }
+  // Add sheet attendees not already in Eventbrite
+  for (const a of gsData) {
+    const key = (a.email || '').toLowerCase();
+    if (key && byEmail[key]) continue; // skip duplicate
+    result.push({ ...a, _source: 'gs' });
+  }
+  return result;
 }
 
 // ─── FETCH FROM GOOGLE SHEETS ───
@@ -594,68 +633,6 @@ function getEBEventId(input) {
   return null;
 }
 
-async function loadEventbrite() {
-  const tokenInput = document.getElementById('ebToken').value.trim();
-  const token = tokenInput || localStorage.getItem(EB_TOKEN_KEY);
-  const urlInput = document.getElementById('ebUrl').value.trim();
-  const customName = document.getElementById('ebName').value.trim();
-  const btn = document.getElementById('ebBtn');
-  const err = document.getElementById('homeErr');
-
-  if (!token) { err.textContent = 'Enter your Eventbrite private token'; return; }
-  const eventId = getEBEventId(urlInput);
-  if (!eventId) { err.textContent = 'Paste an Eventbrite event URL or event ID'; return; }
-
-  btn.disabled = true; btn.textContent = 'Loading...'; err.textContent = '';
-
-  try {
-    const data = await fetchEventbrite(eventId, token);
-    if (!data.length) throw new Error('No attendees found for this event.');
-
-    // Save token on success
-    if (tokenInput) localStorage.setItem(EB_TOKEN_KEY, tokenInput);
-
-    // Get event name
-    let name = customName;
-    if (!name) {
-      try {
-        const evRes = await fetch(`https://www.eventbriteapi.com/v3/events/${eventId}/?token=${token}`);
-        if (evRes.ok) { const ev = await evRes.json(); name = ev.name?.text || 'Event'; }
-      } catch(e) {}
-      if (!name) name = 'Eventbrite Event';
-    }
-
-    const evKey = 'eb_' + eventId;
-    const existing = saved.findIndex(s => s.ebEventId === eventId);
-    if (existing >= 0) {
-      saved[existing].name = name;
-    } else {
-      saved.unshift({ id: evKey, name, ebEventId: eventId, source: 'eventbrite' });
-    }
-    localStorage.setItem(SAVED_KEY, JSON.stringify(saved));
-
-    curSheet = saved.find(s => s.ebEventId === eventId);
-    attendees = applyCI(data, evKey);
-    document.getElementById('ebUrl').value = '';
-    document.getElementById('ebName').value = '';
-
-    showApp();
-    renderStats(); render();
-    toast(name + ': ' + data.length + ' attendees loaded');
-    timer = setInterval(sync, 30000);
-    initEBToken();
-  } catch (e) {
-    err.textContent = 'Error: ' + e.message;
-    if (e.message.includes('401') || e.message.includes('INVALID_AUTH')) {
-      err.textContent = 'Invalid token. Check your Eventbrite private token.';
-    }
-    if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
-      err.textContent = 'Network error. Eventbrite may block browser requests. Try refreshing or check your connection.';
-    }
-  }
-  btn.disabled = false; btn.textContent = 'Load from Eventbrite';
-}
-
 async function fetchEventbrite(eventId, token) {
   if (!token) token = localStorage.getItem(EB_TOKEN_KEY);
   if (!token) throw new Error('No Eventbrite token');
@@ -713,15 +690,18 @@ async function sync() {
   btn.classList.add('spin');
 
   try {
-    let data;
+    let ebData = [], gsData = [];
     const evKey = getEventKey(curSheet);
-    if (curSheet.source === 'eventbrite' && curSheet.ebEventId) {
+
+    if (curSheet.ebEventId) {
       const token = localStorage.getItem(EB_TOKEN_KEY);
-      if (!token) throw new Error('No Eventbrite token');
-      data = await fetchEventbrite(curSheet.ebEventId, token);
-    } else {
-      data = await fetchGviz(curSheet.sheetId);
+      if (token) ebData = await fetchEventbrite(curSheet.ebEventId, token);
     }
+    if (curSheet.sheetId) {
+      gsData = await fetchGviz(curSheet.sheetId);
+    }
+
+    const data = mergeAttendees(ebData, gsData);
     attendees = applyCI(data, evKey);
     pill.className = 'pill ok';
     pill.textContent = 'Synced ' + new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
@@ -786,6 +766,7 @@ function render() {
           ${a.qty>1?`<span class="tg tg-q">${a.qty} tickets</span>`:''}
           ${a.total>0?`<span class="tg tg-m">$${a.total.toFixed(0)}</span>`:''}
           ${a.discount?`<span class="tg tg-d">${esc(a.discount)}</span>`:''}
+          ${a._source==='eb'?'<span class="tg tg-src">Eventbrite</span>':a._source==='gs'?'<span class="tg tg-src">Sheet</span>':''}
         </div>
       </div>
       <div class="ck">${a.checkedIn?'&#10003;':''}</div>
